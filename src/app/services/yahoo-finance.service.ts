@@ -1,16 +1,17 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable } from 'rxjs';
-import { map, catchError } from 'rxjs/operators';
+import { Observable, throwError } from 'rxjs';
+import { map, catchError, timeout } from 'rxjs/operators';
+import { environment } from '../../environments/environment';
 
 @Injectable({
   providedIn: 'root'
 })
 export class YahooFinanceService {
   
-  // Usar proxy CORS para evitar errores de bloqueo
-  private corsProxy = 'https://api.allorigins.win/raw?url=';
-  
+// ✅ CORRECTO - Lee de environment según el modo (dev/prod)
+private backendUrl = environment.yahooFinance.backendUrl;
+
   // Mapeo de símbolos a Yahoo Finance
   private symbolMap: { [key: string]: string } = {
     'ACCIONA': 'ANA.MC',
@@ -51,50 +52,68 @@ export class YahooFinanceService {
     '^IBEX': '^IBEX'
   };
 
-  constructor(private http: HttpClient) {}
+  constructor(private http: HttpClient) {
+    // Log para debugging
+    console.log(`🔧 YahooFinanceService inicializado`);
+    console.log(`📡 Backend URL: ${this.backendUrl}`);
+    console.log(`🏭 Production: ${environment.production}`);
+  }
 
   /**
-   * Obtener cotización de Yahoo Finance con proxy CORS
+   * Obtener cotización usando backend propio
    */
   getQuote(symbol: string): Observable<any> {
+    if (!environment.yahooFinance?.enabled) {
+      return throwError(() => new Error('Yahoo Finance deshabilitada'));
+    }
+
     const ticker = this.symbolMap[symbol] || symbol;
+    const url = `${this.backendUrl}/quote/${ticker}`;
     
-    // URL de Yahoo Finance con proxy CORS
-    const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`;
-    const url = `${this.corsProxy}${encodeURIComponent(yahooUrl)}`;
-
-    return this.http.get(url, { responseType: 'text' }).pipe(
-      map((response: string) => {
-        const data = JSON.parse(response);
-        const result = data.chart.result[0];
-        const meta = result.meta;
-        const quote = result.indicators.quote[0];
-
-        return {
-          c: meta.regularMarketPrice,
-          d: meta.regularMarketPrice - meta.chartPreviousClose,
-          dp: ((meta.regularMarketPrice - meta.chartPreviousClose) / meta.chartPreviousClose) * 100,
-          h: quote.high[quote.high.length - 1] || meta.regularMarketPrice,
-          l: quote.low[quote.low.length - 1] || meta.regularMarketPrice,
-          o: quote.open[0] || meta.regularMarketPrice,
-          pc: meta.chartPreviousClose,
-          t: meta.regularMarketTime,
-          volume: quote.volume[quote.volume.length - 1] || 0
-        };
+    console.log(`📊 GET ${url}`);
+    
+    return this.http.get(url, { responseType: 'json' }).pipe(
+      timeout(10000),
+      map((data: any) => {
+        console.log(`✅ ${ticker}: ${data.c}`);
+        return data;
       }),
       catchError(error => {
-        console.error(`Error fetching Yahoo Finance quote for ${ticker}:`, error);
-        throw error;
+        console.error(`❌ Error ${ticker}:`, error);
+        return throwError(() => new Error(`No se pudo obtener datos de ${symbol}`));
       })
     );
   }
 
   /**
-   * Convertir respuesta de Yahoo Finance al formato de tu app
+   * Obtener datos de índice usando backend
+   */
+  getIndex(symbol: string): Observable<any> {
+    if (!environment.yahooFinance?.enabled) {
+      return throwError(() => new Error('Yahoo Finance deshabilitada'));
+    }
+
+    const ticker = this.symbolMap[symbol] || symbol;
+    const url = `${this.backendUrl}/index/${ticker}`;
+    
+    console.log(`📈 GET ${url}`);
+    
+    return this.http.get(url, { responseType: 'json' }).pipe(
+      timeout(10000),
+      map((data: any) => data),
+      catchError(error => {
+        console.error(`❌ Error índice ${ticker}:`, error);
+        return throwError(() => error);
+      })
+    );
+  }
+
+  /**
+   * Convertir respuesta al formato de la app
    */
   convertToStockData(symbol: string, quote: any): any {
     return {
-      symbol: symbol,
+      symbol,
       name: symbol,
       price: quote.c,
       change: quote.d,
@@ -114,11 +133,8 @@ export class YahooFinanceService {
    * Formatear volumen
    */
   private formatVolume(volume: number): string {
-    if (volume >= 1000000) {
-      return Math.floor(volume / 1000000) + 'M';
-    } else if (volume >= 1000) {
-      return Math.floor(volume / 1000) + 'K';
-    }
+    if (volume >= 1000000) return Math.floor(volume / 1000000) + 'M';
+    if (volume >= 1000) return Math.floor(volume / 1000) + 'K';
     return volume.toString();
   }
 
@@ -126,6 +142,6 @@ export class YahooFinanceService {
    * Verificar si está configurado
    */
   isConfigured(): boolean {
-    return true;
+    return environment.yahooFinance?.enabled === true;
   }
 }
