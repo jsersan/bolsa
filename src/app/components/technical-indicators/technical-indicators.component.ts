@@ -5,16 +5,15 @@ import {
   TechnicalIndicators, 
   TradingSignal, 
   PriceData 
-} from '../../services/teknikal-indicators.service';
+} from '../../services/technical-indicators.service';
 
 @Component({
   selector: 'app-technical-indicators',
   standalone: true,
   imports: [CommonModule],
-  templateUrl: './technical-indicators.component.html',   // String
+  templateUrl: './technical-indicators.component.html',
   styleUrls: ['./technical-indicators.component.scss']
 })
-
 export class TechnicalIndicatorsComponent implements OnInit, OnChanges {
   @Input() priceHistory: PriceData[] = [];
   @Input() currentPrice: number = 0;
@@ -47,7 +46,8 @@ export class TechnicalIndicatorsComponent implements OnInit, OnChanges {
     }, 500);
   }
 
-  formatNumber(value: number): string {
+  formatNumber(value: number | null | undefined): string {
+    if (value === null || value === undefined) return '0.00';
     return value.toFixed(2);
   }
 
@@ -90,16 +90,19 @@ export class TechnicalIndicatorsComponent implements OnInit, OnChanges {
     return 'linear-gradient(135deg, #6b7280 0%, #9ca3af 100%)';
   }
 
-  getPriceVsSMA(price: number, sma: number): string {
+  getPriceVsSMA(price: number, sma: number | null): string {
+    if (sma === null) return '';
     return price > sma ? 'positive' : 'negative';
   }
 
-  getPriceVsSMAText(price: number, sma: number): string {
+  getPriceVsSMAText(price: number, sma: number | null): string {
+    if (sma === null) return '0.00%';
     const diff = ((price - sma) / sma * 100).toFixed(2);
     return price > sma ? `+${diff}%` : `${diff}%`;
   }
 
-  getValueClass(value: number): string {
+  getValueClass(value: number | null | undefined): string {
+    if (value === null || value === undefined) return '';
     return value > 0 ? 'positive' : value < 0 ? 'negative' : '';
   }
 
@@ -115,13 +118,15 @@ export class TechnicalIndicatorsComponent implements OnInit, OnChanges {
     return 'Tendencia moderada';
   }
 
-  getRSIClass(value: number): string {
+  getRSIClass(value: number | null): string {
+    if (value === null) return '';
     if (value > 70) return 'negative'; // Sobrecompra
     if (value < 30) return 'positive'; // Sobreventa
     return '';
   }
 
-  getRSIText(value: number): string {
+  getRSIText(value: number | null): string {
+    if (value === null) return 'Sin datos';
     if (value > 70) return 'Sobrecompra';
     if (value < 30) return 'Sobreventa';
     return 'Neutral';
@@ -133,28 +138,25 @@ export class TechnicalIndicatorsComponent implements OnInit, OnChanges {
     return '';
   }
 
-  getCCIClass(value: number): string {
+  getCCIClass(value: number | null): string {
+    if (value === null) return '';
     if (value > 100) return 'negative';
     if (value < -100) return 'positive';
     return '';
   }
 
-  getWilliamsClass(value: number): string {
+  getWilliamsClass(value: number | null): string {
+    if (value === null) return '';
     if (value > -20) return 'negative';
     if (value < -80) return 'positive';
     return '';
   }
 
-  // ============================================
-// AÑADIR ESTOS MÉTODOS AL FINAL DE LA CLASE
-// technical-indicators.component.ts
-// (ANTES de la última llave de cierre})
-// ============================================
-
   /**
    * Clase para Bandas de Bollinger
    */
   getBollingerClass(price: number, bb: any): string {
+    if (!bb) return '';
     if (price <= bb.lower) return 'positive'; // Cerca de banda baja = compra
     if (price >= bb.upper) return 'negative'; // Cerca de banda alta = venta
     return '';
@@ -181,7 +183,9 @@ export class TechnicalIndicatorsComponent implements OnInit, OnChanges {
   /**
    * Clase para niveles de Fibonacci
    */
-  getFibonacciClass(currentPrice: number, fibLevel: number): string {
+  getFibonacciClass(currentPrice: number, fibLevel: number | null | undefined): string {
+    if (fibLevel === null || fibLevel === undefined) return '';
+    
     const distance = Math.abs(currentPrice - fibLevel);
     const tolerance = fibLevel * 0.02; // 2% tolerancia
     
@@ -194,7 +198,9 @@ export class TechnicalIndicatorsComponent implements OnInit, OnChanges {
   /**
    * Verificar si está cerca de un nivel Fibonacci
    */
-  isNearFibonacci(currentPrice: number, fibLevel: number): boolean {
+  isNearFibonacci(currentPrice: number, fibLevel: number | null | undefined): boolean {
+    if (fibLevel === null || fibLevel === undefined) return false;
+    
     const distance = Math.abs(currentPrice - fibLevel);
     const tolerance = fibLevel * 0.02;
     return distance < tolerance;
@@ -203,7 +209,9 @@ export class TechnicalIndicatorsComponent implements OnInit, OnChanges {
   /**
    * Formatear OBV
    */
-  formatOBV(value: number): string {
+  formatOBV(value: number | null | undefined): string {
+    if (value === null || value === undefined) return '0';
+    
     const abs = Math.abs(value);
     if (abs >= 1000000) {
       return `${(value / 1000000).toFixed(1)}M`;
@@ -216,7 +224,9 @@ export class TechnicalIndicatorsComponent implements OnInit, OnChanges {
   /**
    * Formatear volumen
    */
-  formatVolume(value: number): string {
+  formatVolume(value: number | null | undefined): string {
+    if (value === null || value === undefined) return '0';
+    
     if (value >= 1000000) {
       return `${(value / 1000000).toFixed(1)}M`;
     } else if (value >= 1000) {
@@ -224,8 +234,4 @@ export class TechnicalIndicatorsComponent implements OnInit, OnChanges {
     }
     return value.toFixed(0);
   }
-
-// ============================================
-// FIN DE LOS NUEVOS MÉTODOS
-// ============================================
 }
