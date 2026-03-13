@@ -232,3 +232,4 @@ Creado para gestión de inversiones en bolsa del mercado español.
 # angular-burtsa-euribor
 # burtsa-frontend
 # burtsa-frontend
+# burtsa-frontend

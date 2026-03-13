@@ -595,6 +595,99 @@
       }
     }
   }
+
+  // ============================================
+  // NUEVO: SEÑALES TÉCNICAS EN CARDS
+  // ============================================
+  .signal-badge-container {
+    margin: 16px 0 12px 0;
+  }
+
+  .signal-badge {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-weight: 700;
+    font-size: 13px;
+    border: 2px solid transparent;
+    transition: all 0.2s ease;
+
+    .signal-icon {
+      font-size: 16px;
+      line-height: 1;
+    }
+
+    .signal-text {
+      flex: 1;
+      text-align: center;
+    }
+
+    .signal-strength {
+      font-size: 12px;
+      background: rgba(0, 0, 0, 0.1);
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+
+    &.signal-strong-buy {
+      background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+      border-color: #10b981;
+      color: #065f46;
+
+      .signal-strength {
+        background: rgba(6, 95, 70, 0.15);
+      }
+    }
+
+    &.signal-buy {
+      background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+      border-color: #34d399;
+      color: #047857;
+
+      .signal-strength {
+        background: rgba(4, 120, 87, 0.15);
+      }
+    }
+
+    &.signal-neutral {
+      background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+      border-color: #fbbf24;
+      color: #92400e;
+
+      .signal-strength {
+        background: rgba(146, 64, 14, 0.15);
+      }
+    }
+
+    &.signal-sell {
+      background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
+      border-color: #f87171;
+      color: #b91c1c;
+
+      .signal-strength {
+        background: rgba(185, 28, 28, 0.15);
+      }
+    }
+
+    &.signal-strong-sell {
+      background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+      border-color: #ef4444;
+      color: #991b1b;
+
+      .signal-strength {
+        background: rgba(153, 27, 27, 0.15);
+      }
+    }
+
+    &.signal-none {
+      background: #f3f4f6;
+      border-color: #e5e7eb;
+      color: #6b7280;
+    }
+  }
 }
 
 // Transactions Section

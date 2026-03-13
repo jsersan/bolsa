@@ -177,13 +177,13 @@
     </div>
 
     <!-- Stocks List -->
-    <div class="stocks-section" *ngIf="getStocksArray().length > 0">
+    <div class="stocks-section" *ngIf="stocksWithSignals.length > 0">
       <h2 class="section-title">Mis Acciones</h2>
       
       <div class="stocks-grid">
         <div 
           class="stock-card" 
-          *ngFor="let stock of getStocksArray()"
+          *ngFor="let stock of stocksWithSignals"
           (click)="goToStock(stock.symbol)">
           
           <div class="stock-header">
@@ -193,6 +193,15 @@
             </div>
             <div class="stock-quantity">
               {{ stock.quantity }} acciones
+            </div>
+          </div>
+
+          <!-- NUEVO: Badge de señal técnica -->
+          <div class="signal-badge-container" *ngIf="stock.signal">
+            <div class="signal-badge" [ngClass]="getSignalClass(stock.signal.type)">
+              <span class="signal-icon">{{ getSignalIcon(stock.signal.type) }}</span>
+              <span class="signal-text">{{ getSignalText(stock.signal.type) }}</span>
+              <span class="signal-strength">{{ stock.signal.strength }}%</span>
             </div>
           </div>
 

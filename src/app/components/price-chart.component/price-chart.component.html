@@ -1,0 +1,37 @@
+<div class="chart-container">
+    <div class="chart-header">
+      <h3 class="chart-title">{{ title }}</h3>
+      <div class="chart-controls">
+        <button 
+          *ngFor="let period of periods" 
+          class="period-button"
+          [class.active]="selectedPeriod === period.value"
+          (click)="changePeriod(period.value)">
+          {{ period.label }}
+        </button>
+      </div>
+    </div>
+    <div class="chart-wrapper">
+      <canvas #chartCanvas></canvas>
+    </div>
+    <div class="chart-stats" *ngIf="stats">
+      <div class="stat-item">
+        <span class="stat-label">Máximo:</span>
+        <span class="stat-value positive">{{ stats.max.toFixed(2) }}€</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">Mínimo:</span>
+        <span class="stat-value negative">{{ stats.min.toFixed(2) }}€</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">Media:</span>
+        <span class="stat-value">{{ stats.avg.toFixed(2) }}€</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">Variación:</span>
+        <span class="stat-value" [class.positive]="stats.change >= 0" [class.negative]="stats.change < 0">
+          {{ stats.change >= 0 ? '+' : '' }}{{ stats.change.toFixed(2) }}%
+        </span>
+      </div>
+    </div>
+  </div>

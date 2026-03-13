@@ -9,7 +9,20 @@ export interface PriceData {
   volume: number;
 }
 
+export interface MarketState {
+  trend: 'strong_uptrend' | 'uptrend' | 'sideways' | 'downtrend' | 'strong_downtrend';
+  strength: number; // 0-100
+  direction: 'bullish' | 'bearish' | 'neutral';
+  phase: 'trending' | 'ranging' | 'consolidating';
+  confidence: number; // 0-100
+  description: string;
+  recommendedIndicators: string[];
+}
+
 export interface TechnicalIndicators {
+  // NUEVO: Estado del mercado
+  marketState?: MarketState;
+  
   // Medias Móviles
   sma20: number | null;
   sma50: number | null;
@@ -59,7 +72,7 @@ export interface TechnicalIndicators {
     down: number;
   } | null;
   
-  // NUEVOS: Volatilidad y Volumen
+  // Volatilidad y Volumen
   bollingerBands: {
     upper: number;
     middle: number;
@@ -78,7 +91,7 @@ export interface TechnicalIndicators {
     spike: boolean;
   } | null;
   
-  // NUEVOS: Soporte/Resistencia
+  // Soporte/Resistencia
   fibonacci: {
     level236: number;
     level382: number;
@@ -105,6 +118,7 @@ export interface TradingSignal {
   message: string;
   strength: number;
   timestamp: Date;
+  priority?: number; // NUEVO: 1=alta, 2=media, 3=baja
 }
 
 @Injectable({
@@ -115,9 +129,163 @@ export class TechnicalIndicatorsService {
   constructor() {}
 
   /**
-   * Calcular todos los indicadores técnicos
+   * NUEVO: Detectar estado del mercado automáticamente
    */
-  calculateIndicators(priceHistory: PriceData[]): TechnicalIndicators {
+  private detectMarketState(
+    indicators: TechnicalIndicators, 
+    currentPrice: number,
+    priceHistory: PriceData[]
+  ): MarketState {
+    let trendScore = 0; // -100 (fuerte bajista) a +100 (fuerte alcista)
+    let strengthScore = 0; // 0-100
+    let confidence = 0; // 0-100
+    let evidence: string[] = [];
+    
+    // 1. Análisis de Medias Móviles (peso: 25%)
+    if (indicators.sma20 && indicators.sma50) {
+      if (currentPrice > indicators.sma20 && indicators.sma20 > indicators.sma50) {
+        trendScore += 25;
+        evidence.push('Precio sobre SMA20>SMA50');
+      } else if (currentPrice < indicators.sma20 && indicators.sma20 < indicators.sma50) {
+        trendScore -= 25;
+        evidence.push('Precio bajo SMA20<SMA50');
+      }
+    }
+    
+    // 2. ADX - Fuerza de tendencia (peso: 20%)
+    if (indicators.adx) {
+      if (indicators.adx.value > 25) {
+        strengthScore += 40;
+        confidence += 20;
+        evidence.push(`ADX fuerte (${indicators.adx.value.toFixed(1)})`);
+        
+        if (indicators.adx.plusDI > indicators.adx.minusDI) {
+          trendScore += 20;
+        } else {
+          trendScore -= 20;
+        }
+      } else if (indicators.adx.value < 20) {
+        strengthScore -= 20;
+        evidence.push('ADX débil - rango lateral');
+      }
+    }
+    
+    // 3. MACD (peso: 15%)
+    if (indicators.macd) {
+      if (indicators.macd.histogram > 0) {
+        trendScore += 15;
+        evidence.push('MACD alcista');
+      } else {
+        trendScore -= 15;
+        evidence.push('MACD bajista');
+      }
+      
+      if (Math.abs(indicators.macd.histogram) > 0.5) {
+        strengthScore += 20;
+      }
+    }
+    
+    // 4. Ichimoku (peso: 20%)
+    if (indicators.ichimoku) {
+      if (indicators.ichimoku.cloudColor === 'green' && currentPrice > indicators.ichimoku.senkouA) {
+        trendScore += 20;
+        strengthScore += 20;
+        confidence += 15;
+        evidence.push('Precio sobre nube verde');
+      } else if (indicators.ichimoku.cloudColor === 'red' && currentPrice < indicators.ichimoku.senkouB) {
+        trendScore -= 20;
+        strengthScore += 20;
+        confidence += 15;
+        evidence.push('Precio bajo nube roja');
+      }
+    }
+    
+    // 5. Aroon (peso: 10%)
+    if (indicators.aroon) {
+      if (indicators.aroon.up > 70 && indicators.aroon.down < 30) {
+        trendScore += 10;
+        evidence.push('Aroon alcista');
+      } else if (indicators.aroon.down > 70 && indicators.aroon.up < 30) {
+        trendScore -= 10;
+        evidence.push('Aroon bajista');
+      }
+    }
+    
+    // 6. Momentum (peso: 10%)
+    if (indicators.momentum !== null && indicators.momentum !== undefined) {
+      if (indicators.momentum > 0) {
+        trendScore += 10;
+      } else {
+        trendScore -= 10;
+      }
+    }
+    
+    // Normalizar scores
+    strengthScore = Math.min(100, Math.max(0, strengthScore));
+    confidence = Math.min(100, Math.max(0, confidence + 40)); // Base 40%
+    
+    // Determinar tendencia
+    let trend: MarketState['trend'];
+    let direction: MarketState['direction'];
+    let phase: MarketState['phase'];
+    let description: string;
+    let recommendedIndicators: string[];
+    
+    if (trendScore >= 50) {
+      trend = 'strong_uptrend';
+      direction = 'bullish';
+      phase = 'trending';
+      description = `Tendencia alcista fuerte (${evidence.join(', ')})`;
+      recommendedIndicators = ['ADX', 'Parabolic SAR', 'EMA', 'MACD', 'Ichimoku'];
+    } else if (trendScore >= 20) {
+      trend = 'uptrend';
+      direction = 'bullish';
+      phase = 'trending';
+      description = `Tendencia alcista moderada (${evidence.join(', ')})`;
+      recommendedIndicators = ['SMA', 'MACD', 'ADX', 'Bollinger Bands'];
+    } else if (trendScore <= -50) {
+      trend = 'strong_downtrend';
+      direction = 'bearish';
+      phase = 'trending';
+      description = `Tendencia bajista fuerte (${evidence.join(', ')})`;
+      recommendedIndicators = ['ADX', 'Parabolic SAR', 'EMA', 'MACD', 'Ichimoku'];
+    } else if (trendScore <= -20) {
+      trend = 'downtrend';
+      direction = 'bearish';
+      phase = 'trending';
+      description = `Tendencia bajista moderada (${evidence.join(', ')})`;
+      recommendedIndicators = ['SMA', 'MACD', 'ADX', 'Bollinger Bands'];
+    } else {
+      trend = 'sideways';
+      direction = 'neutral';
+      
+      // Determinar si está consolidando o en rango
+      if (indicators.bollingerBands && indicators.bollingerBands.bandwidth < 10) {
+        phase = 'consolidating';
+        description = `Consolidación - squeeze de Bollinger (${evidence.join(', ')})`;
+      } else {
+        phase = 'ranging';
+        description = `Rango lateral (${evidence.join(', ')})`;
+      }
+      
+      recommendedIndicators = ['RSI', 'Estocástico', 'CCI', 'Bollinger Bands', 'Fibonacci'];
+    }
+    
+    return {
+      trend,
+      strength: strengthScore,
+      direction,
+      phase,
+      confidence,
+      description,
+      recommendedIndicators
+    };
+  }
+
+  /**
+   * Calcular todos los indicadores técnicos + DETECTAR ESTADO
+   */
+  calculateIndicators(priceHistory: PriceData[], currentPrice?: number): TechnicalIndicators {
     if (!priceHistory || priceHistory.length < 50) {
       return this.getEmptyIndicators();
     }
@@ -125,8 +293,9 @@ export class TechnicalIndicatorsService {
     const closes = priceHistory.map(p => p.close);
     const highs = priceHistory.map(p => p.high);
     const lows = priceHistory.map(p => p.low);
+    const price = currentPrice || closes[closes.length - 1];
 
-    return {
+    const indicators: TechnicalIndicators = {
       // Medias Móviles
       sma20: this.calculateSMA(closes, 20),
       sma50: this.calculateSMA(closes, 50),
@@ -144,7 +313,7 @@ export class TechnicalIndicatorsService {
       // ADX
       adx: this.calculateADX(priceHistory, 14),
       
-      // Parabolic SAR
+      // Parabolic SAR (corregido)
       sar: this.calculateParabolicSAR(priceHistory),
       
       // Osciladores
@@ -155,292 +324,318 @@ export class TechnicalIndicatorsService {
       momentum: this.calculateMomentum(closes, 10),
       aroon: this.calculateAroon(highs, lows, 25),
       
-      // NUEVOS: Volatilidad y Volumen
+      // Volatilidad y Volumen
       bollingerBands: this.calculateBollingerBands(closes, 20),
       atr: this.calculateATR(priceHistory, 14),
       obv: this.calculateOBV(priceHistory),
       volumeAnalysis: this.calculateVolumeAnalysis(priceHistory),
       
-      // NUEVOS: Soporte/Resistencia
+      // Soporte/Resistencia
       fibonacci: this.calculateFibonacci(priceHistory, 50),
       pivotPoints: this.calculatePivotPoints(priceHistory)
     };
+    
+    // NUEVO: Detectar estado del mercado
+    indicators.marketState = this.detectMarketState(indicators, price, priceHistory);
+    
+    return indicators;
   }
 
   /**
-   * Generar señales de trading
+   * MEJORADO: Generar señales priorizadas según estado del mercado
    */
   generateSignals(indicators: TechnicalIndicators, currentPrice: number): TradingSignal[] {
     const signals: TradingSignal[] = [];
+    const marketState = indicators.marketState;
+    
+    // Si estamos en tendencia fuerte, priorizar indicadores de tendencia
+    if (marketState && (marketState.phase === 'trending')) {
+      this.addTrendFollowingSignals(signals, indicators, currentPrice, marketState);
+    }
+    
+    // Si estamos en rango, priorizar osciladores
+    if (marketState && marketState.phase === 'ranging') {
+      this.addRangeBoundSignals(signals, indicators, currentPrice);
+    }
+    
+    // Si estamos consolidando, priorizar señales de breakout
+    if (marketState && marketState.phase === 'consolidating') {
+      this.addBreakoutSignals(signals, indicators, currentPrice);
+    }
+    
+    // Señales generales (siempre activas)
+    this.addGeneralSignals(signals, indicators, currentPrice);
+    
+    // Ordenar por prioridad y strength
+    return signals.sort((a, b) => {
+      const priorityDiff = (a.priority || 3) - (b.priority || 3);
+      if (priorityDiff !== 0) return priorityDiff;
+      return b.strength - a.strength;
+    });
+  }
 
-    // SMA
-    if (indicators.sma20 && indicators.sma50) {
-      if (currentPrice > indicators.sma20 && currentPrice > indicators.sma50) {
+  /**
+   * NUEVO: Señales para tendencias
+   */
+  private addTrendFollowingSignals(
+    signals: TradingSignal[], 
+    indicators: TechnicalIndicators, 
+    currentPrice: number,
+    marketState: MarketState
+  ) {
+    // ADX con dirección
+    if (indicators.adx && indicators.adx.value > 25) {
+      if (indicators.adx.plusDI > indicators.adx.minusDI) {
         signals.push({
-          indicator: 'SMA',
-          type: 'buy',
-          message: 'Precio por encima de SMA20 y SMA50 - Tendencia alcista',
-          strength: 70,
-          timestamp: new Date()
+          indicator: 'ADX',
+          type: marketState.strength > 70 ? 'strong_buy' : 'buy',
+          message: `Tendencia alcista confirmada (ADX: ${indicators.adx.value.toFixed(1)}, +DI > -DI)`,
+          strength: Math.min(indicators.adx.value, 100),
+          timestamp: new Date(),
+          priority: 1
         });
-      } else if (currentPrice < indicators.sma20 && currentPrice < indicators.sma50) {
+      } else {
         signals.push({
-          indicator: 'SMA',
-          type: 'sell',
-          message: 'Precio por debajo de SMA20 y SMA50 - Tendencia bajista',
-          strength: 70,
-          timestamp: new Date()
+          indicator: 'ADX',
+          type: marketState.strength > 70 ? 'strong_sell' : 'sell',
+          message: `Tendencia bajista confirmada (ADX: ${indicators.adx.value.toFixed(1)}, -DI > +DI)`,
+          strength: Math.min(indicators.adx.value, 100),
+          timestamp: new Date(),
+          priority: 1
         });
       }
     }
-
-    // EMA
-    if (indicators.ema10 && indicators.ema50) {
-      if (indicators.ema10 > indicators.ema50) {
+    
+    // Ichimoku en tendencia
+    if (indicators.ichimoku) {
+      if (indicators.ichimoku.cloudColor === 'green' && currentPrice > indicators.ichimoku.senkouA) {
         signals.push({
-          indicator: 'EMA',
-          type: 'buy',
-          message: 'EMA10 cruzó por encima de EMA50 - Golden Cross',
-          strength: 80,
-          timestamp: new Date()
+          indicator: 'Ichimoku',
+          type: 'strong_buy',
+          message: `Precio sobre nube verde - Tendencia alcista muy fuerte`,
+          strength: 85,
+          timestamp: new Date(),
+          priority: 1
         });
-      } else if (indicators.ema10 < indicators.ema50) {
+      } else if (indicators.ichimoku.cloudColor === 'red' && currentPrice < indicators.ichimoku.senkouB) {
         signals.push({
-          indicator: 'EMA',
-          type: 'sell',
-          message: 'EMA10 cruzó por debajo de EMA50 - Death Cross',
-          strength: 80,
-          timestamp: new Date()
+          indicator: 'Ichimoku',
+          type: 'strong_sell',
+          message: `Precio bajo nube roja - Tendencia bajista muy fuerte`,
+          strength: 85,
+          timestamp: new Date(),
+          priority: 1
         });
       }
     }
-
-    // MACD
-    if (indicators.macd) {
+    
+    // MACD para confirmar tendencia
+    if (indicators.macd && Math.abs(indicators.macd.histogram) > 0.3) {
       if (indicators.macd.histogram > 0 && indicators.macd.value > indicators.macd.signal) {
         signals.push({
           indicator: 'MACD',
           type: 'buy',
-          message: 'MACD cruzó por encima de la señal - Momentum alcista',
+          message: `Momentum alcista fuerte (Histograma: ${indicators.macd.histogram.toFixed(2)})`,
           strength: 75,
-          timestamp: new Date()
+          timestamp: new Date(),
+          priority: 1
         });
       } else if (indicators.macd.histogram < 0 && indicators.macd.value < indicators.macd.signal) {
         signals.push({
           indicator: 'MACD',
           type: 'sell',
-          message: 'MACD cruzó por debajo de la señal - Momentum bajista',
+          message: `Momentum bajista fuerte (Histograma: ${indicators.macd.histogram.toFixed(2)})`,
           strength: 75,
-          timestamp: new Date()
+          timestamp: new Date(),
+          priority: 1
         });
       }
     }
+  }
 
-    // Ichimoku
-    if (indicators.ichimoku) {
-      if (indicators.ichimoku.cloudColor === 'green' && currentPrice > indicators.ichimoku.senkouA) {
-        signals.push({
-          indicator: 'Ichimoku',
-          type: 'buy',
-          message: 'Precio sobre nube verde - Tendencia alcista fuerte',
-          strength: 85,
-          timestamp: new Date()
-        });
-      } else if (indicators.ichimoku.cloudColor === 'red' && currentPrice < indicators.ichimoku.senkouB) {
-        signals.push({
-          indicator: 'Ichimoku',
-          type: 'sell',
-          message: 'Precio bajo nube roja - Tendencia bajista fuerte',
-          strength: 85,
-          timestamp: new Date()
-        });
-      }
-    }
-
-    // ADX
-    if (indicators.adx) {
-      if (indicators.adx.value > 25) {
-        if (indicators.adx.plusDI > indicators.adx.minusDI) {
-          signals.push({
-            indicator: 'ADX',
-            type: 'buy',
-            message: `Tendencia alcista fuerte (ADX: ${indicators.adx.value.toFixed(1)})`,
-            strength: Math.min(indicators.adx.value, 100),
-            timestamp: new Date()
-          });
-        } else {
-          signals.push({
-            indicator: 'ADX',
-            type: 'sell',
-            message: `Tendencia bajista fuerte (ADX: ${indicators.adx.value.toFixed(1)})`,
-            strength: Math.min(indicators.adx.value, 100),
-            timestamp: new Date()
-          });
-        }
-      }
-    }
-
-    // RSI
+  /**
+   * NUEVO: Señales para rangos laterales
+   */
+  private addRangeBoundSignals(
+    signals: TradingSignal[], 
+    indicators: TechnicalIndicators, 
+    currentPrice: number
+  ) {
+    // RSI en extremos
     if (indicators.rsi !== null) {
-      if (indicators.rsi > 70) {
-        signals.push({
-          indicator: 'RSI',
-          type: 'sell',
-          message: `Sobrecompra (RSI: ${indicators.rsi.toFixed(1)}) - Posible corrección`,
-          strength: Math.min((indicators.rsi - 70) * 3, 100),
-          timestamp: new Date()
-        });
-      } else if (indicators.rsi < 30) {
+      if (indicators.rsi < 30) {
         signals.push({
           indicator: 'RSI',
           type: 'buy',
-          message: `Sobreventa (RSI: ${indicators.rsi.toFixed(1)}) - Posible rebote`,
+          message: `Sobreventa extrema en rango (RSI: ${indicators.rsi.toFixed(1)}) - Rebote probable`,
           strength: Math.min((30 - indicators.rsi) * 3, 100),
-          timestamp: new Date()
+          timestamp: new Date(),
+          priority: 1
+        });
+      } else if (indicators.rsi > 70) {
+        signals.push({
+          indicator: 'RSI',
+          type: 'sell',
+          message: `Sobrecompra extrema en rango (RSI: ${indicators.rsi.toFixed(1)}) - Corrección probable`,
+          strength: Math.min((indicators.rsi - 70) * 3, 100),
+          timestamp: new Date(),
+          priority: 1
         });
       }
     }
-
-    // Estocástico
+    
+    // Estocástico en zonas extremas
     if (indicators.stochastic) {
-      if (indicators.stochastic.k > 80 && indicators.stochastic.k > indicators.stochastic.d) {
-        signals.push({
-          indicator: 'Estocástico',
-          type: 'sell',
-          message: 'Sobrecompra - %K cruzó por encima de %D en zona alta',
-          strength: 70,
-          timestamp: new Date()
-        });
-      } else if (indicators.stochastic.k < 20 && indicators.stochastic.k < indicators.stochastic.d) {
+      if (indicators.stochastic.k < 20 && indicators.stochastic.k < indicators.stochastic.d) {
         signals.push({
           indicator: 'Estocástico',
           type: 'buy',
-          message: 'Sobreventa - %K cruzó por debajo de %D en zona baja',
+          message: `Sobreventa confirmada (%K: ${indicators.stochastic.k.toFixed(1)} < %D) - Compra en rango`,
           strength: 70,
-          timestamp: new Date()
+          timestamp: new Date(),
+          priority: 1
+        });
+      } else if (indicators.stochastic.k > 80 && indicators.stochastic.k > indicators.stochastic.d) {
+        signals.push({
+          indicator: 'Estocástico',
+          type: 'sell',
+          message: `Sobrecompra confirmada (%K: ${indicators.stochastic.k.toFixed(1)} > %D) - Venta en rango`,
+          strength: 70,
+          timestamp: new Date(),
+          priority: 1
         });
       }
     }
-
-    // NUEVAS SEÑALES: Bandas de Bollinger
+    
+    // Bandas de Bollinger para rebotes
     if (indicators.bollingerBands) {
-      const bb = indicators.bollingerBands;
-      
-      if (currentPrice <= bb.lower) {
+      if (currentPrice <= indicators.bollingerBands.lower) {
         signals.push({
           indicator: 'Bollinger Bands',
           type: 'buy',
-          message: `Precio tocó banda inferior (${bb.lower.toFixed(2)}€) - Posible rebote`,
+          message: `Precio en banda inferior (${indicators.bollingerBands.lower.toFixed(2)}€) - Rebote probable`,
           strength: 75,
-          timestamp: new Date()
+          timestamp: new Date(),
+          priority: 1
         });
-      } else if (currentPrice >= bb.upper) {
+      } else if (currentPrice >= indicators.bollingerBands.upper) {
         signals.push({
           indicator: 'Bollinger Bands',
           type: 'sell',
-          message: `Precio tocó banda superior (${bb.upper.toFixed(2)}€) - Posible corrección`,
+          message: `Precio en banda superior (${indicators.bollingerBands.upper.toFixed(2)}€) - Retroceso probable`,
           strength: 75,
-          timestamp: new Date()
-        });
-      }
-      
-      if (bb.bandwidth < 10) {
-        signals.push({
-          indicator: 'Bollinger Squeeze',
-          type: 'neutral',
-          message: 'Bandas estrechas - Preparación para gran movimiento',
-          strength: 60,
-          timestamp: new Date()
+          timestamp: new Date(),
+          priority: 1
         });
       }
     }
+  }
 
-    // NUEVAS SEÑALES: ATR
-    if (indicators.atr !== null) {
+  /**
+   * NUEVO: Señales para consolidación/breakout
+   */
+  private addBreakoutSignals(
+    signals: TradingSignal[], 
+    indicators: TechnicalIndicators, 
+    currentPrice: number
+  ) {
+    // Bollinger Squeeze
+    if (indicators.bollingerBands && indicators.bollingerBands.bandwidth < 10) {
+      signals.push({
+        indicator: 'Bollinger Squeeze',
+        type: 'neutral',
+        message: `Squeeze extremo (Ancho: ${indicators.bollingerBands.bandwidth.toFixed(1)}%) - Gran movimiento inminente`,
+        strength: 80,
+        timestamp: new Date(),
+        priority: 1
+      });
+    }
+    
+    // Volumen anómalo
+    if (indicators.volumeAnalysis && indicators.volumeAnalysis.spike) {
+      const ratio = (indicators.volumeAnalysis.current / indicators.volumeAnalysis.average * 100).toFixed(0);
+      signals.push({
+        indicator: 'Volumen',
+        type: 'neutral',
+        message: `Pico de volumen (${ratio}% vs promedio) - Posible breakout`,
+        strength: 75,
+        timestamp: new Date(),
+        priority: 1
+      });
+    }
+    
+    // ADX bajo pero empezando a subir (señal temprana de nuevo trend)
+    if (indicators.adx && indicators.adx.value > 15 && indicators.adx.value < 25) {
+      signals.push({
+        indicator: 'ADX',
+        type: 'neutral',
+        message: `ADX en ${indicators.adx.value.toFixed(1)} - Posible inicio de nueva tendencia`,
+        strength: 60,
+        timestamp: new Date(),
+        priority: 2
+      });
+    }
+  }
+
+  /**
+   * Señales generales (siempre activas, prioridad más baja)
+   */
+  private addGeneralSignals(
+    signals: TradingSignal[], 
+    indicators: TechnicalIndicators, 
+    currentPrice: number
+  ) {
+    // Cruces de medias móviles
+    if (indicators.sma20 && indicators.sma50) {
+      if (currentPrice > indicators.sma20 && indicators.sma20 > indicators.sma50) {
+        signals.push({
+          indicator: 'SMA',
+          type: 'buy',
+          message: `Alineación alcista: Precio > SMA20 > SMA50`,
+          strength: 65,
+          timestamp: new Date(),
+          priority: 2
+        });
+      } else if (currentPrice < indicators.sma20 && indicators.sma20 < indicators.sma50) {
+        signals.push({
+          indicator: 'SMA',
+          type: 'sell',
+          message: `Alineación bajista: Precio < SMA20 < SMA50`,
+          strength: 65,
+          timestamp: new Date(),
+          priority: 2
+        });
+      }
+    }
+    
+    // Fibonacci (niveles clave)
+    if (indicators.fibonacci) {
+      const tolerance = (indicators.fibonacci.high - indicators.fibonacci.low) * 0.02;
+      
+      if (Math.abs(currentPrice - indicators.fibonacci.level618) < tolerance) {
+        signals.push({
+          indicator: 'Fibonacci',
+          type: 'neutral',
+          message: `Precio en nivel 61.8% (${indicators.fibonacci.level618.toFixed(2)}€) - Nivel clave`,
+          strength: 70,
+          timestamp: new Date(),
+          priority: 2
+        });
+      }
+    }
+    
+    // ATR para gestión de riesgo
+    if (indicators.atr) {
       const stopDistance = indicators.atr * 2;
       signals.push({
         indicator: 'ATR',
         type: 'neutral',
         message: `Stop Loss sugerido: ${stopDistance.toFixed(2)}€ (2x ATR)`,
         strength: 50,
-        timestamp: new Date()
+        timestamp: new Date(),
+        priority: 3
       });
     }
-
-    // NUEVAS SEÑALES: Volumen
-    if (indicators.volumeAnalysis) {
-      const vol = indicators.volumeAnalysis;
-      
-      if (vol.spike) {
-        const priceChange = currentPrice - (currentPrice * 0.99);
-        if (priceChange > 0) {
-          signals.push({
-            indicator: 'Volumen',
-            type: 'buy',
-            message: `Pico de volumen alcista (${((vol.current/vol.average)*100).toFixed(0)}% vs promedio)`,
-            strength: 70,
-            timestamp: new Date()
-          });
-        }
-      } else if (vol.trend === 'low') {
-        signals.push({
-          indicator: 'Volumen',
-          type: 'neutral',
-          message: 'Volumen bajo - Falta de convicción en movimiento',
-          strength: 40,
-          timestamp: new Date()
-        });
-      }
-    }
-
-    // NUEVAS SEÑALES: Fibonacci
-    if (indicators.fibonacci) {
-      const fib = indicators.fibonacci;
-      const tolerance = (fib.high - fib.low) * 0.02;
-      
-      if (Math.abs(currentPrice - fib.level618) < tolerance) {
-        signals.push({
-          indicator: 'Fibonacci',
-          type: 'buy',
-          message: `Precio cerca de retroceso 61.8% (${fib.level618.toFixed(2)}€) - Nivel clave de soporte`,
-          strength: 80,
-          timestamp: new Date()
-        });
-      } else if (Math.abs(currentPrice - fib.level382) < tolerance) {
-        signals.push({
-          indicator: 'Fibonacci',
-          type: 'neutral',
-          message: `Precio en retroceso 38.2% (${fib.level382.toFixed(2)}€) - Zona de pausa`,
-          strength: 60,
-          timestamp: new Date()
-        });
-      }
-    }
-
-    // NUEVAS SEÑALES: Puntos Pivote
-    if (indicators.pivotPoints) {
-      const pp = indicators.pivotPoints;
-      
-      if (currentPrice > pp.pivot && currentPrice < pp.r1) {
-        signals.push({
-          indicator: 'Pivot Points',
-          type: 'buy',
-          message: `Precio sobre pivot (${pp.pivot.toFixed(2)}€) - Objetivo R1: ${pp.r1.toFixed(2)}€`,
-          strength: 65,
-          timestamp: new Date()
-        });
-      } else if (currentPrice < pp.pivot && currentPrice > pp.s1) {
-        signals.push({
-          indicator: 'Pivot Points',
-          type: 'sell',
-          message: `Precio bajo pivot (${pp.pivot.toFixed(2)}€) - Soporte S1: ${pp.s1.toFixed(2)}€`,
-          strength: 65,
-          timestamp: new Date()
-        });
-      }
-    }
-
-    return signals;
   }
 
   /**
@@ -456,7 +651,8 @@ export class TechnicalIndicatorsService {
     let totalWeight = 0;
 
     signals.forEach(signal => {
-      const weight = signal.strength / 100;
+      const weight = (signal.strength / 100) * (4 - (signal.priority || 3)); // Prioridad 1=3x, 2=2x, 3=1x
+
       totalWeight += weight;
 
       if (signal.type === 'buy' || signal.type === 'strong_buy') {
@@ -471,13 +667,13 @@ export class TechnicalIndicatorsService {
 
     if (buyPercent > sellPercent && buyPercent > 60) {
       return {
-        type: 'buy',
+        type: buyPercent > 75 ? 'strong_buy' : 'buy',
         strength: Math.round(buyPercent),
         message: `${signals.filter(s => s.type === 'buy' || s.type === 'strong_buy').length} indicadores sugieren COMPRA`
       };
     } else if (sellPercent > buyPercent && sellPercent > 60) {
       return {
-        type: 'sell',
+        type: sellPercent > 75 ? 'strong_sell' : 'sell',
         strength: Math.round(sellPercent),
         message: `${signals.filter(s => s.type === 'sell' || s.type === 'strong_sell').length} indicadores sugieren VENTA`
       };
@@ -491,7 +687,7 @@ export class TechnicalIndicatorsService {
   }
 
   // ============================================
-  // MÉTODOS DE CÁLCULO - INDICADORES EXISTENTES
+  // MÉTODOS DE CÁLCULO (sin cambios)
   // ============================================
 
   private calculateSMA(data: number[], period: number): number | null {
@@ -673,13 +869,6 @@ export class TechnicalIndicatorsService {
     return { up: aroonUp, down: aroonDown };
   }
 
-  // ============================================
-  // MÉTODOS DE CÁLCULO - NUEVOS INDICADORES
-  // ============================================
-
-  /**
-   * Bandas de Bollinger
-   */
   private calculateBollingerBands(closes: number[], period: number = 20): any {
     if (closes.length < period) return null;
     
@@ -698,9 +887,6 @@ export class TechnicalIndicatorsService {
     return { upper, middle: sma, lower, bandwidth };
   }
 
-  /**
-   * ATR (Average True Range)
-   */
   private calculateATR(data: PriceData[], period: number = 14): number | null {
     if (data.length < period + 1) return null;
     
@@ -724,9 +910,6 @@ export class TechnicalIndicatorsService {
     return recentTR.reduce((a, b) => a + b, 0) / period;
   }
 
-  /**
-   * OBV (On-Balance Volume)
-   */
   private calculateOBV(data: PriceData[]): number | null {
     if (data.length < 2) return null;
     
@@ -743,9 +926,6 @@ export class TechnicalIndicatorsService {
     return obv;
   }
 
-  /**
-   * Análisis de Volumen
-   */
   private calculateVolumeAnalysis(data: PriceData[]): any {
     if (data.length < 20) return null;
     
@@ -764,9 +944,6 @@ export class TechnicalIndicatorsService {
     };
   }
 
-  /**
-   * Fibonacci
-   */
   private calculateFibonacci(data: PriceData[], periods: number = 50): any {
     if (data.length < periods) return null;
     
@@ -788,9 +965,6 @@ export class TechnicalIndicatorsService {
     };
   }
 
-  /**
-   * Puntos Pivote
-   */
   private calculatePivotPoints(data: PriceData[]): any {
     if (data.length < 2) return null;
     
@@ -810,11 +984,9 @@ export class TechnicalIndicatorsService {
     return { pivot, r1, r2, r3, s1, s2, s3 };
   }
 
-  /**
-   * Indicadores vacíos
-   */
   private getEmptyIndicators(): TechnicalIndicators {
     return {
+      marketState: undefined,
       sma20: null,
       sma50: null,
       sma200: null,

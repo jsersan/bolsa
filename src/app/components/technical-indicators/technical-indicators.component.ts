@@ -4,7 +4,8 @@ import {
   TechnicalIndicatorsService, 
   TechnicalIndicators, 
   TradingSignal, 
-  PriceData 
+  PriceData,
+  MarketState
 } from '../../services/technical-indicators.service';
 
 @Component({
@@ -38,13 +39,57 @@ export class TechnicalIndicatorsComponent implements OnInit, OnChanges {
 
     setTimeout(() => {
       if (this.priceHistory.length >= 50) {
-        this.indicators = this.technicalService.calculateIndicators(this.priceHistory);
+        // Pasar currentPrice al servicio
+        this.indicators = this.technicalService.calculateIndicators(this.priceHistory, this.currentPrice);
         this.signals = this.technicalService.generateSignals(this.indicators, this.currentPrice);
         this.consensus = this.technicalService.getConsensus(this.signals);
+        
+        console.log('📊 Estado del Mercado:', this.indicators.marketState);
       }
       this.loading = false;
     }, 500);
   }
+
+  // ============================================
+  // NUEVOS MÉTODOS PARA ESTADO DEL MERCADO
+  // ============================================
+
+  getMarketStateClass(state: MarketState): string {
+    const classes: { [key: string]: string } = {
+      'strong_uptrend': 'strong-bullish',
+      'uptrend': 'bullish',
+      'sideways': 'neutral',
+      'downtrend': 'bearish',
+      'strong_downtrend': 'strong-bearish'
+    };
+    return classes[state.trend] || 'neutral';
+  }
+
+  getMarketStateIcon(trend: string): string {
+    const icons: { [key: string]: string } = {
+      'strong_uptrend': '🚀',
+      'uptrend': '📈',
+      'sideways': '↔️',
+      'downtrend': '📉',
+      'strong_downtrend': '⚠️'
+    };
+    return icons[trend] || '❓';
+  }
+
+  getMarketStateTitle(trend: string): string {
+    const titles: { [key: string]: string } = {
+      'strong_uptrend': 'TENDENCIA ALCISTA FUERTE',
+      'uptrend': 'TENDENCIA ALCISTA',
+      'sideways': 'RANGO LATERAL',
+      'downtrend': 'TENDENCIA BAJISTA',
+      'strong_downtrend': 'TENDENCIA BAJISTA FUERTE'
+    };
+    return titles[trend] || 'ESTADO DESCONOCIDO';
+  }
+
+  // ============================================
+  // MÉTODOS EXISTENTES
+  // ============================================
 
   formatNumber(value: number | null | undefined): string {
     if (value === null || value === undefined) return '0.00';
@@ -120,8 +165,8 @@ export class TechnicalIndicatorsComponent implements OnInit, OnChanges {
 
   getRSIClass(value: number | null): string {
     if (value === null) return '';
-    if (value > 70) return 'negative'; // Sobrecompra
-    if (value < 30) return 'positive'; // Sobreventa
+    if (value > 70) return 'negative';
+    if (value < 30) return 'positive';
     return '';
   }
 
@@ -152,52 +197,37 @@ export class TechnicalIndicatorsComponent implements OnInit, OnChanges {
     return '';
   }
 
-  /**
-   * Clase para Bandas de Bollinger
-   */
   getBollingerClass(price: number, bb: any): string {
     if (!bb) return '';
-    if (price <= bb.lower) return 'positive'; // Cerca de banda baja = compra
-    if (price >= bb.upper) return 'negative'; // Cerca de banda alta = venta
+    if (price <= bb.lower) return 'positive';
+    if (price >= bb.upper) return 'negative';
     return '';
   }
 
-  /**
-   * Clase para tendencia de volumen
-   */
   getVolumeTrendClass(trend: string): string {
     if (trend === 'high') return 'positive';
     if (trend === 'low') return 'negative';
     return '';
   }
 
-  /**
-   * Texto para tendencia de volumen
-   */
   getVolumeTrendText(trend: string): string {
     if (trend === 'high') return '🔥 Alto';
     if (trend === 'low') return '📉 Bajo';
     return '➡️ Normal';
   }
 
-  /**
-   * Clase para niveles de Fibonacci
-   */
   getFibonacciClass(currentPrice: number, fibLevel: number | null | undefined): string {
     if (fibLevel === null || fibLevel === undefined) return '';
     
     const distance = Math.abs(currentPrice - fibLevel);
-    const tolerance = fibLevel * 0.02; // 2% tolerancia
+    const tolerance = fibLevel * 0.02;
     
     if (distance < tolerance) {
-      return 'strong'; // Cerca del nivel
+      return 'strong';
     }
     return '';
   }
 
-  /**
-   * Verificar si está cerca de un nivel Fibonacci
-   */
   isNearFibonacci(currentPrice: number, fibLevel: number | null | undefined): boolean {
     if (fibLevel === null || fibLevel === undefined) return false;
     
@@ -206,9 +236,6 @@ export class TechnicalIndicatorsComponent implements OnInit, OnChanges {
     return distance < tolerance;
   }
 
-  /**
-   * Formatear OBV
-   */
   formatOBV(value: number | null | undefined): string {
     if (value === null || value === undefined) return '0';
     
@@ -221,9 +248,6 @@ export class TechnicalIndicatorsComponent implements OnInit, OnChanges {
     return value.toFixed(0);
   }
 
-  /**
-   * Formatear volumen
-   */
   formatVolume(value: number | null | undefined): string {
     if (value === null || value === undefined) return '0';
     

@@ -6,8 +6,26 @@ import { AuthService } from '../../services/auth.service';
 import { PortfolioService, Portfolio, Transaction } from '../../services/portfolio.service';
 import { MarketDataService } from '../../services/market-data.service';
 import { EuriborService } from '../../services/euribor.service';
+import { TechnicalIndicatorsService } from '../../services/technical-indicators.service';
 import { Subject, takeUntil } from 'rxjs';
 import Swal from 'sweetalert2';
+
+interface StockWithSignal {
+  symbol: string;
+  name: string;
+  quantity: number;
+  avgPrice: number;
+  totalInvested: number;
+  currentPrice?: number;
+  currentValue?: number;
+  profitLoss?: number;
+  profitLossPercent?: number;
+  signal?: {
+    type: string;
+    strength: number;
+    message: string;
+  };
+}
 
 @Component({
   selector: 'app-portfolio',
@@ -22,6 +40,9 @@ export class PortfolioComponent implements OnInit, OnDestroy {
   loading = true;
   userName = '';
   lastUpdateTime: string = '';
+  
+  // NUEVO: Stocks enriquecidos con señales
+  stocksWithSignals: StockWithSignal[] = [];
   
   // Variables Euribor
   euriborRate: number = 0;
@@ -46,6 +67,7 @@ export class PortfolioComponent implements OnInit, OnDestroy {
     private portfolioService: PortfolioService,
     private marketDataService: MarketDataService,
     private euriborService: EuriborService,
+    private technicalService: TechnicalIndicatorsService,
     private router: Router
   ) {}
 
@@ -95,6 +117,9 @@ export class PortfolioComponent implements OnInit, OnDestroy {
         await this.updatePrices(userId);
       }
       
+      // NUEVO: Cargar señales técnicas para cada stock
+      await this.loadTechnicalSignals();
+      
       // Actualizar hora de última actualización
       this.updateLastUpdateTime();
     } catch (error) {
@@ -113,6 +138,105 @@ export class PortfolioComponent implements OnInit, OnDestroy {
     } finally {
       this.loading = false;
     }
+  }
+
+  /**
+   * NUEVO: Cargar señales técnicas para todos los stocks
+   */
+  async loadTechnicalSignals() {
+    if (!this.portfolio) return;
+
+    const stocks = Object.values(this.portfolio.stocks);
+    this.stocksWithSignals = [];
+
+    for (const stock of stocks) {
+      try {
+        // Verificar que el stock tenga precio actual
+        if (!stock.currentPrice || stock.currentPrice <= 0) {
+          console.warn(`Stock ${stock.symbol} sin precio actual, saltando señales`);
+          this.stocksWithSignals.push({
+            ...stock,
+            signal: undefined
+          });
+          continue;
+        }
+
+        // Obtener datos históricos usando el método correcto de tu servicio
+        // NOTA: Necesitarás implementar este método en MarketDataService
+        // Por ahora, usaremos datos simulados basados en el precio actual
+        const priceHistory = this.generateMockHistoricalData(stock.symbol, stock.currentPrice);
+        
+        if (priceHistory && priceHistory.length >= 50) {
+          // Calcular indicadores técnicos
+          const indicators = this.technicalService.calculateIndicators(priceHistory, stock.currentPrice);
+          
+          // Generar señales
+          const signals = this.technicalService.generateSignals(indicators, stock.currentPrice);
+          
+          // Obtener consenso
+          const consensus = this.technicalService.getConsensus(signals);
+          
+          // Añadir stock con señal
+          this.stocksWithSignals.push({
+            ...stock,
+            signal: consensus
+          });
+        } else {
+          // Stock sin suficientes datos históricos
+          this.stocksWithSignals.push({
+            ...stock,
+            signal: undefined
+          });
+        }
+      } catch (error) {
+        console.error(`Error al cargar señales para ${stock.symbol}:`, error);
+        this.stocksWithSignals.push({
+          ...stock,
+          signal: undefined
+        });
+      }
+    }
+
+    console.log('✅ Señales técnicas cargadas:', this.stocksWithSignals);
+  }
+
+  /**
+   * TEMPORAL: Generar datos históricos simulados
+   * TODO: Reemplazar con método real cuando esté disponible en MarketDataService
+   */
+  private generateMockHistoricalData(symbol: string, currentPrice: number): any[] {
+    const data = [];
+    const days = 200;
+    const volatility = 0.02; // 2% de volatilidad diaria
+    
+    let price = currentPrice;
+    const today = new Date();
+    
+    for (let i = days - 1; i >= 0; i--) {
+      const date = new Date(today);
+      date.setDate(date.getDate() - i);
+      
+      // Simular variación diaria
+      const change = (Math.random() - 0.5) * 2 * volatility;
+      price = price * (1 + change);
+      
+      const high = price * (1 + Math.random() * 0.01);
+      const low = price * (1 - Math.random() * 0.01);
+      const open = (high + low) / 2;
+      const close = price;
+      const volume = Math.floor(Math.random() * 1000000) + 500000;
+      
+      data.push({
+        date: date.toISOString().split('T')[0],
+        open,
+        high,
+        low,
+        close,
+        volume
+      });
+    }
+    
+    return data;
   }
 
   /**
@@ -166,6 +290,9 @@ export class PortfolioComponent implements OnInit, OnDestroy {
         await this.portfolioService.updatePortfolioPrices(userId, currentPrices);
         this.portfolio = await this.portfolioService.getPortfolio(userId);
         this.updateLastUpdateTime();
+        
+        // NUEVO: Actualizar señales también
+        await this.loadTechnicalSignals();
       }, 1000);
     } catch (error) {
       console.error('Error al actualizar precios:', error);
@@ -182,6 +309,54 @@ export class PortfolioComponent implements OnInit, OnDestroy {
       minute: '2-digit',
       second: '2-digit'
     });
+  }
+
+  /**
+   * ============================================
+   * NUEVOS MÉTODOS PARA SEÑALES
+   * ============================================
+   */
+
+  /**
+   * Obtener icono de la señal
+   */
+  getSignalIcon(type: string): string {
+    const icons: any = {
+      'buy': '🟢',
+      'sell': '🔴',
+      'neutral': '🟡',
+      'strong_buy': '🟢🟢',
+      'strong_sell': '🔴🔴'
+    };
+    return icons[type] || '⚪';
+  }
+
+  /**
+   * Obtener texto de la señal
+   */
+  getSignalText(type: string): string {
+    const texts: any = {
+      'buy': 'COMPRA',
+      'sell': 'VENTA',
+      'neutral': 'ESPERAR',
+      'strong_buy': 'COMPRA FUERTE',
+      'strong_sell': 'VENTA FUERTE'
+    };
+    return texts[type] || 'SIN SEÑAL';
+  }
+
+  /**
+   * Obtener clase CSS de la señal
+   */
+  getSignalClass(type: string): string {
+    const classes: any = {
+      'buy': 'signal-buy',
+      'sell': 'signal-sell',
+      'neutral': 'signal-neutral',
+      'strong_buy': 'signal-strong-buy',
+      'strong_sell': 'signal-strong-sell'
+    };
+    return classes[type] || 'signal-none';
   }
 
   /**
