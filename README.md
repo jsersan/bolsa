@@ -233,3 +233,4 @@ Creado para gestión de inversiones en bolsa del mercado español.
 # burtsa-frontend
 # burtsa-frontend
 # burtsa-frontend
+# bolsa

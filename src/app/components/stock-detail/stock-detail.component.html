@@ -188,13 +188,21 @@
         </p>
       </div>
     </div>
-    
-<!-- ============================================ -->
-<!-- AÑADIR ESTO DESPUÉS DE LA SECCIÓN "trading-section" -->
-<!-- Y ANTES DE LA SECCIÓN "company-section" -->
-<!-- ============================================ -->
 
-    <!-- NUEVA SECCIÓN: Análisis Técnico -->
+    <!-- ============================================ -->
+    <!-- GRÁFICA DE PRECIO HISTÓRICO -->
+    <!-- ============================================ -->
+    <div class="price-history-section" *ngIf="priceHistory.length > 0">
+      <app-price-chart
+        [data]="priceHistory"
+        [title]="'Evolución de ' + (stock.name || symbol)"
+        [symbol]="symbol">
+      </app-price-chart>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- ANÁLISIS TÉCNICO -->
+    <!-- ============================================ -->
     <div class="technical-analysis-section" *ngIf="stock">
       <h2 class="section-title">📊 Análisis Técnico</h2>
       
@@ -206,22 +214,18 @@
       
       <!-- Componente de indicadores -->
       <app-technical-indicators 
-        *ngIf="!loadingIndicators && priceHistory.length > 0"
-        [priceHistory]="priceHistory"
+        *ngIf="!loadingIndicators && historicalPrices.length > 0"
+        [priceHistory]="historicalPrices"
         [currentPrice]="stock.price">
       </app-technical-indicators>
       
       <!-- Sin datos -->
-      <div class="no-indicators" *ngIf="!loadingIndicators && priceHistory.length === 0">
+      <div class="no-indicators" *ngIf="!loadingIndicators && historicalPrices.length === 0">
         <div class="no-data-icon">📊</div>
         <p>No hay datos históricos disponibles para calcular indicadores</p>
         <small>Se necesitan al menos 50 días de datos</small>
       </div>
     </div>
-
-<!-- ============================================ -->
-<!-- FIN DE LA NUEVA SECCIÓN -->
-<!-- ============================================ -->
 
 
     <!-- Company Profile -->

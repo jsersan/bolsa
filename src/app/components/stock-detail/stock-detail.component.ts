@@ -9,31 +9,41 @@ import { TechnicalIndicatorsComponent } from '../technical-indicators/technical-
 import { PriceData } from '../../services/technical-indicators.service';
 import { Subject, takeUntil } from 'rxjs';
 import Swal from 'sweetalert2';
+import { PriceChartComponent, PriceHistoryPoint } from '../price-chart/price-chart.component';
+import { HttpClient } from '@angular/common/http';
+
+import { environment } from 'src/environments/environment';
+import { YahooFinanceService } from '../../services/yahoo-finance.service';
 
 @Component({
   selector: 'app-stock-detail',
   standalone: true,
-  imports: [CommonModule, FormsModule, TechnicalIndicatorsComponent],
+  imports: [CommonModule, 
+            FormsModule, 
+            TechnicalIndicatorsComponent,
+            PriceChartComponent],
   templateUrl: './stock-detail.component.html',
   styleUrls: ['./stock-detail.component.scss']
 })
+
 export class StockDetailComponent implements OnInit, OnDestroy {
   stock: StockData | null = null;
-  stockSymbol: string = '';
+  symbol: string = '';  // ← CAMBIAR de stockSymbol a symbol
   loading = true;
+  
+  // Propiedades para la gráfica y análisis técnico
+  priceHistory: PriceHistoryPoint[] = [];
+  historicalPrices: PriceData[] = [];  // Para el componente de indicadores técnicos
+  loadingIndicators = false;
 
   operationType: 'buy' | 'sell' = 'buy';
   quantity: number = 1;
   totalAmount: number = 0;
+  currentPrice: number = 0;  // ← AÑADIR esto
 
   userPosition: any = null;
   availableCash: number = 0;
   remainingCash: number = 0;
-
-  // NUEVAS propiedades para indicadores técnicos
-  priceHistory: PriceData[] = [];
-  loadingIndicators = false;
-  private backendUrl = 'http://localhost:3000/api'; // Cambiar según environment
 
   private companyWebsites: { [key: string]: string } = {
     ACCIONA: 'https://www.acciona.com',
@@ -81,17 +91,39 @@ export class StockDetailComponent implements OnInit, OnDestroy {
     private router: Router,
     private marketDataService: MarketDataService,
     private authService: AuthService,
-    private portfolioService: PortfolioService
+    private portfolioService: PortfolioService,
+    public yahooFinanceService: YahooFinanceService, // Asegúrate de que este import sea correcto
+    private http: HttpClient
   ) {}
 
-  ngOnInit() {
-    this.route.params.pipe(takeUntil(this.destroy$)).subscribe(params => {
-      this.stockSymbol = params['symbol'];
-      this.loadStockData();
-      this.loadUserData();
-      this.loadPriceHistory(); // NUEVO
-    });
-  }
+// En stock-detail.component.ts
+ngOnInit(): void {
+  this.route.params.pipe(takeUntil(this.destroy$)).subscribe(params => {
+    this.symbol = params['symbol'];
+    this.loading = true; // Aseguramos que sale el spinner al cambiar de valor
+    this.loadUserData();
+    
+    this.marketDataService.getStockData(this.symbol)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (data: StockData | null) => {
+          if (data) {
+            this.stock = data;
+            this.currentPrice = data.price;
+            this.calculateTotal();
+            this.loadPriceHistory(); // Esto carga la gráfica
+          }
+          // Movemos el loading aquí dentro para asegurar que Angular 
+          // detecte el cambio cuando 'stock' ya tiene valor
+          this.loading = false; 
+        },
+        error: (err) => {
+          console.error("Error cargando datos:", err);
+          this.loading = false;
+        }
+      });
+  });
+}
 
   ngOnDestroy() {
     this.destroy$.next();
@@ -101,11 +133,12 @@ export class StockDetailComponent implements OnInit, OnDestroy {
   loadStockData() {
     this.loading = true;
     this.marketDataService
-      .getStockData(this.stockSymbol)
+      .getStockData(this.symbol)  // ← CAMBIAR stockSymbol a symbol
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: data => {
           this.stock = data;
+          this.currentPrice = data.price;  // ← AÑADIR esto
           this.calculateTotal();
           this.loading = false;
         },
@@ -123,7 +156,7 @@ export class StockDetailComponent implements OnInit, OnDestroy {
     try {
       this.userPosition = await this.portfolioService.getStockPosition(
         user.uid,
-        this.stockSymbol
+        this.symbol  // ← CAMBIAR stockSymbol a symbol
       );
 
       const portfolio = await this.portfolioService.getPortfolio(user.uid);
@@ -137,59 +170,77 @@ export class StockDetailComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * NUEVO: Cargar histórico para indicadores técnicos
+   * NUEVO: Cargar histórico para gráfica e indicadores técnicos
    */
-  async loadPriceHistory() {
+
+  loadPriceHistory() {
+    if (!this.symbol) return;
     this.loadingIndicators = true;
+  
+    // 1. Traducimos REPSOL -> REP.MC
+    const ticker = this.yahooFinanceService.getTicker(this.symbol);
     
-    try {
-      console.log(`📊 Cargando histórico de ${this.stockSymbol}...`);
-      
-      const url = `${this.backendUrl}/stock/${this.stockSymbol}/history?days=200`;
-      const response = await fetch(url);
-      
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-      
-      const data = await response.json();
-      
-      if (data.success && data.history) {
-        this.priceHistory = data.history;
-        console.log(`✅ Histórico cargado: ${data.dataPoints} días (${data.source})`);
-      } else {
-        throw new Error('Datos inválidos');
-      }
-      
-    } catch (error) {
-      console.error('❌ Error cargando histórico:', error);
-      console.log('⚠️ Usando datos simulados en frontend');
-      this.priceHistory = this.generateFallbackData();
-    } finally {
-      this.loadingIndicators = false;
-    }
+    // 2. FORZAMOS LOCALHOST (ignora cualquier otra configuración)
+    // Nota: Asegúrate de que la ruta sea /api/history/ porque es la que añadimos al server.js
+    const url = `http://localhost:3000/api/history/${ticker}`;
+  
+    console.log('--- INTENTANDO CARGAR GRÁFICO DESDE ---', url);
+  
+    this.http.get<any[]>(url)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (data) => {
+          console.log('✅ Datos recibidos del backend:', data.length);
+          if (data && data.length > 0) {
+            this.priceHistory = data.map(item => ({
+              date: item.date,
+              price: item.close // El gráfico busca la propiedad 'price'
+            }));
+            this.historicalPrices = data;
+          }
+          this.loadingIndicators = false;
+        },
+        error: (err) => {
+          console.error("❌ Error conectando al localhost:", err);
+          this.loadingIndicators = false;
+        }
+      });
   }
 
   /**
-   * Generar datos de fallback si el backend no responde
+   * TEMPORAL: Generar datos históricos simulados de 4 años
+   * TODO: Reemplazar con datos reales de tu API cuando estén disponibles
    */
-  private generateFallbackData(): PriceData[] {
-    const data: PriceData[] = [];
-    let price = this.stock?.price || 50;
+  private generateHistoricalData(symbol: string, currentPrice: number): any[] {
+    const data = [];
+    const days = 1460; // 4 años
+    const volatility = 0.02; // 2% de volatilidad diaria
     
-    for (let i = 200; i >= 0; i--) {
-      const date = new Date();
+    let price = currentPrice * 0.7; // Empezar desde un 30% más bajo hace 4 años
+    const today = new Date();
+    
+    for (let i = days - 1; i >= 0; i--) {
+      const date = new Date(today);
       date.setDate(date.getDate() - i);
       
-      price += (Math.random() - 0.5) * price * 0.02;
+      // Simular variación diaria con tendencia alcista suave
+      const trend = 0.0003; // Tendencia alcista del 0.03% diario
+      const change = (Math.random() - 0.5) * 2 * volatility + trend;
+      price = price * (1 + change);
+      
+      const high = price * (1 + Math.random() * 0.01);
+      const low = price * (1 - Math.random() * 0.01);
+      const open = (high + low) / 2;
+      const close = price;
+      const volume = Math.floor(Math.random() * 1000000) + 500000;
       
       data.push({
         date: date.toISOString().split('T')[0],
-        open: price * 0.998,
-        high: price * 1.005,
-        low: price * 0.995,
-        close: price,
-        volume: Math.floor(Math.random() * 1000000) + 500000
+        open,
+        high,
+        low,
+        close,
+        volume
       });
     }
     
@@ -297,14 +348,14 @@ export class StockDetailComponent implements OnInit, OnDestroy {
 
       if (this.operationType === 'buy') {
         await this.portfolioService.buyStock(
-          this.stockSymbol,
+          this.symbol,  // ← CAMBIAR
           this.stock.name,
           this.quantity,
           this.stock.price,
           `Compra desde detalle - ${new Date().toLocaleDateString()}`
         );
 
-        const updatedPosition = await this.portfolioService.getStockPosition(user.uid, this.stockSymbol);
+        const updatedPosition = await this.portfolioService.getStockPosition(user.uid, this.symbol);  // ← CAMBIAR
         
         if (!updatedPosition) {
           throw new Error('⚠️ Error: La compra no se guardó correctamente en tu cartera. Intenta de nuevo.');
@@ -325,7 +376,7 @@ export class StockDetailComponent implements OnInit, OnDestroy {
         });
       } else {
         await this.portfolioService.sellStock(
-          this.stockSymbol,
+          this.symbol,  // ← CAMBIAR
           this.stock.name,
           this.quantity,
           this.stock.price,

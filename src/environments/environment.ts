@@ -3,20 +3,11 @@
 
 export const environment = {
   production: false,
-  
-  // Yahoo Finance (sin API key necesaria)
+  // ESTO ES LO QUE TE FALTA DEFINIR:
   yahooFinance: {
     enabled: true,
-    backendUrl: 'http://localhost:3000/api'  // ← Desarrollo
+    backendUrl: 'http://localhost:3000/api'
   },
-  
-  // Finnhub (alternativa - requiere API key)
-  finnhub: {
-    key: '',  // Opcional: pega tu Finnhub API key aquí
-    enabled: false
-  },
-  
-  // Control de datos
-  useMockData: false,  // ← IMPORTANTE: Mantén esto en true inicialmente
+  useMockData: false,
   activeAPI: 'yahooFinance'
 };

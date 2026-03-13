@@ -1,9 +1,9 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, of, forkJoin } from 'rxjs';
-import { map, catchError } from 'rxjs/operators';
-import { environment } from '../../environments/environment';
-import { YahooFinanceService } from './yahoo-finance.service'; // ⭐ CORREGIDO: añadido .service
+import { map, catchError } from 'rxjs/operators'; // <--- CORRECCIÓN: Faltaban operadores
+import { environment } from '../../environments/environment'; // <--- CORRECCIÓN: Importar environment
+import { YahooFinanceService } from './yahoo-finance.service';
 
 export interface StockData {
   symbol: string;
@@ -196,6 +196,30 @@ export class MarketDataService {
     return of(this.getMockStockData([symbol])[0]);
   }
 
+  /**
+ * Obtiene datos históricos reales desde el backend
+ */
+  getHistoricalData(symbol: string): Observable<any[]> {
+    // Usamos el ticker real (ej: 'REPSOL' -> 'REP.MC')
+    // IMPORTANTE: fíjate que sea 'this.yahooFinanceService' (en minúscula)
+    const ticker = this.yahooFinanceService.getTicker ? 
+                   this.yahooFinanceService.getTicker(symbol) : 
+                   symbol;
+  
+    // Accedemos a la URL del backend a través de environment
+    const url = `${environment.yahooFinance.backendUrl}/history/${ticker}`;
+  
+    return this.http.get<any[]>(url).pipe(
+      map(data => {
+        if (!data || !Array.isArray(data)) return [];
+        return data;
+      }),
+      catchError(error => {
+        console.error(`Error en histórico para ${ticker}:`, error);
+        return of([]); // Esto necesita el 'of' que hemos importado arriba
+      })
+    );
+  }
   /**
    * Formatea el volumen de forma legible
    */

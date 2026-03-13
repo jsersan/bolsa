@@ -59,6 +59,11 @@ private backendUrl = environment.yahooFinance.backendUrl;
     console.log(`🏭 Production: ${environment.production}`);
   }
 
+  getHistory(symbol: string): Observable<any[]> {
+    const ticker = this.symbolMap[symbol] || symbol;
+    return this.http.get<any[]>(`${this.backendUrl}/history/${ticker}`);
+  }
+
   /**
    * Obtener cotización usando backend propio
    */
@@ -107,6 +112,11 @@ private backendUrl = environment.yahooFinance.backendUrl;
       })
     );
   }
+
+  // Añade esto dentro de la clase YahooFinanceService
+getTicker(symbol: string): string {
+  return this.symbolMap[symbol] || symbol;
+}
 
   /**
    * Convertir respuesta al formato de la app

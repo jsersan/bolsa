@@ -3,15 +3,15 @@ export const environment = {
   
   yahooFinance: {
     enabled: true,
-    backendUrl: 'http://localhost:3000/api'
+    // CAMBIA ESTO por tu URL real de Render/Railway
+    backendUrl: 'https://burtsa-backend.onrender.com/api' 
   },
   
-  // Finnhub (deshabilitado en producción)
   finnhub: {
     key: '',
     enabled: false
   },
   
-  useMockData: false,
+  useMockData: false, // Correcto, en producción no queremos datos falsos
   activeAPI: 'yahooFinance'
 };

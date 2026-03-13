@@ -140,73 +140,160 @@ export class TechnicalIndicatorsService {
     let strengthScore = 0; // 0-100
     let confidence = 0; // 0-100
     let evidence: string[] = [];
+    const detailedReasons: string[] = [];
     
     // 1. Análisis de Medias Móviles (peso: 25%)
     if (indicators.sma20 && indicators.sma50) {
       if (currentPrice > indicators.sma20 && indicators.sma20 > indicators.sma50) {
         trendScore += 25;
         evidence.push('Precio sobre SMA20>SMA50');
+        detailedReasons.push(
+          `Las medias móviles muestran alineación alcista: el precio (${currentPrice.toFixed(2)}€) está por encima de la SMA20 (${indicators.sma20.toFixed(2)}€), ` +
+          `que a su vez está por encima de la SMA50 (${indicators.sma50.toFixed(2)}€). Esta configuración indica que la tendencia de corto y medio plazo es alcista.`
+        );
       } else if (currentPrice < indicators.sma20 && indicators.sma20 < indicators.sma50) {
         trendScore -= 25;
         evidence.push('Precio bajo SMA20<SMA50');
+        detailedReasons.push(
+          `Las medias móviles muestran alineación bajista: el precio (${currentPrice.toFixed(2)}€) está por debajo de la SMA20 (${indicators.sma20.toFixed(2)}€), ` +
+          `que a su vez está por debajo de la SMA50 (${indicators.sma50.toFixed(2)}€). Esta configuración indica que la tendencia de corto y medio plazo es bajista.`
+        );
       }
     }
     
     // 2. ADX - Fuerza de tendencia (peso: 20%)
     if (indicators.adx) {
-      if (indicators.adx.value > 25) {
+      const adxValue = indicators.adx.value;
+      const plusDI = indicators.adx.plusDI;
+      const minusDI = indicators.adx.minusDI;
+      
+      if (adxValue > 25) {
         strengthScore += 40;
         confidence += 20;
-        evidence.push(`ADX fuerte (${indicators.adx.value.toFixed(1)})`);
         
-        if (indicators.adx.plusDI > indicators.adx.minusDI) {
+        if (plusDI > minusDI) {
           trendScore += 20;
+          const diff = (plusDI - minusDI).toFixed(1);
+          detailedReasons.push(
+            `El ADX presenta un valor de ${adxValue.toFixed(1)}, superior a 25, lo que indica una tendencia fuerte. ` +
+            `El +DI (${plusDI.toFixed(1)}) es mayor que el -DI (${minusDI.toFixed(1)}) por ${diff} puntos, ` +
+            `confirmando que la tendencia actual es alcista con fuerza.`
+          );
+          evidence.push(`ADX fuerte (${adxValue.toFixed(1)})`);
         } else {
           trendScore -= 20;
+          const diff = (minusDI - plusDI).toFixed(1);
+          detailedReasons.push(
+            `El ADX presenta un valor de ${adxValue.toFixed(1)}, superior a 25, lo que indica una tendencia fuerte. ` +
+            `El -DI (${minusDI.toFixed(1)}) es mayor que el +DI (${plusDI.toFixed(1)}) por ${diff} puntos, ` +
+            `confirmando que la tendencia actual es bajista con fuerza.`
+          );
+          evidence.push(`ADX fuerte (${adxValue.toFixed(1)})`);
         }
-      } else if (indicators.adx.value < 20) {
+      } else if (adxValue < 20) {
         strengthScore -= 20;
+        detailedReasons.push(
+          `El ADX tiene un valor de ${adxValue.toFixed(1)}, por debajo de 20, lo que indica ausencia de tendencia definida. ` +
+          `El mercado se encuentra en rango lateral, siendo más apropiados los indicadores de sobrecompra/sobreventa.`
+        );
         evidence.push('ADX débil - rango lateral');
+      } else {
+        detailedReasons.push(
+          `El ADX muestra ${adxValue.toFixed(1)}, un valor intermedio (20-25) que sugiere una tendencia moderada pero no consolidada.`
+        );
       }
     }
     
     // 3. MACD (peso: 15%)
     if (indicators.macd) {
-      if (indicators.macd.histogram > 0) {
+      const macdValue = indicators.macd.value;
+      const signal = indicators.macd.signal;
+      const histogram = indicators.macd.histogram;
+      
+      if (histogram > 0) {
         trendScore += 15;
+        if (Math.abs(histogram) > 0.5) {
+          detailedReasons.push(
+            `El MACD (${macdValue.toFixed(2)}) está por encima de su línea de señal (${signal.toFixed(2)}), ` +
+            `con un histograma positivo de ${histogram.toFixed(2)}. Esto indica momentum alcista fuerte.`
+          );
+        } else {
+          detailedReasons.push(
+            `El MACD muestra cruce alcista con histograma positivo de ${histogram.toFixed(2)}, indicando inicio de momentum alcista.`
+          );
+        }
         evidence.push('MACD alcista');
       } else {
         trendScore -= 15;
+        if (Math.abs(histogram) > 0.5) {
+          detailedReasons.push(
+            `El MACD (${macdValue.toFixed(2)}) está por debajo de su línea de señal (${signal.toFixed(2)}), ` +
+            `con un histograma negativo de ${histogram.toFixed(2)}. Esto indica momentum bajista fuerte.`
+          );
+        } else {
+          detailedReasons.push(
+            `El MACD muestra cruce bajista con histograma negativo de ${histogram.toFixed(2)}, indicando inicio de momentum bajista.`
+          );
+        }
         evidence.push('MACD bajista');
       }
       
-      if (Math.abs(indicators.macd.histogram) > 0.5) {
+      if (Math.abs(histogram) > 0.5) {
         strengthScore += 20;
       }
     }
     
     // 4. Ichimoku (peso: 20%)
     if (indicators.ichimoku) {
-      if (indicators.ichimoku.cloudColor === 'green' && currentPrice > indicators.ichimoku.senkouA) {
+      const cloudColor = indicators.ichimoku.cloudColor;
+      const senkouA = indicators.ichimoku.senkouA;
+      const senkouB = indicators.ichimoku.senkouB;
+      
+      if (cloudColor === 'green' && currentPrice > senkouA) {
         trendScore += 20;
         strengthScore += 20;
         confidence += 15;
+        detailedReasons.push(
+          `Ichimoku muestra nube verde (Senkou A: ${senkouA.toFixed(2)}€ > Senkou B: ${senkouB.toFixed(2)}€) ` +
+          `y el precio (${currentPrice.toFixed(2)}€) está por encima de la nube. ` +
+          `Esta es una señal alcista muy fuerte que indica soporte sólido y tendencia clara.`
+        );
         evidence.push('Precio sobre nube verde');
-      } else if (indicators.ichimoku.cloudColor === 'red' && currentPrice < indicators.ichimoku.senkouB) {
+      } else if (cloudColor === 'red' && currentPrice < senkouB) {
         trendScore -= 20;
         strengthScore += 20;
         confidence += 15;
+        detailedReasons.push(
+          `Ichimoku muestra nube roja (Senkou B: ${senkouB.toFixed(2)}€ > Senkou A: ${senkouA.toFixed(2)}€) ` +
+          `y el precio (${currentPrice.toFixed(2)}€) está por debajo de la nube. ` +
+          `Esta es una señal bajista muy fuerte que indica resistencia sólida y tendencia clara.`
+        );
         evidence.push('Precio bajo nube roja');
+      } else {
+        detailedReasons.push(
+          `El precio se encuentra dentro o cerca de la nube de Ichimoku, lo que indica indecisión del mercado.`
+        );
       }
     }
     
     // 5. Aroon (peso: 10%)
     if (indicators.aroon) {
-      if (indicators.aroon.up > 70 && indicators.aroon.down < 30) {
+      const aroonUp = indicators.aroon.up;
+      const aroonDown = indicators.aroon.down;
+      
+      if (aroonUp > 70 && aroonDown < 30) {
         trendScore += 10;
+        detailedReasons.push(
+          `El Aroon Up (${aroonUp.toFixed(1)}%) está por encima de 70 mientras que el Aroon Down (${aroonDown.toFixed(1)}%) ` +
+          `está por debajo de 30. Esto indica que se han formado nuevos máximos recientemente, señal de tendencia alcista.`
+        );
         evidence.push('Aroon alcista');
-      } else if (indicators.aroon.down > 70 && indicators.aroon.up < 30) {
+      } else if (aroonDown > 70 && aroonUp < 30) {
         trendScore -= 10;
+        detailedReasons.push(
+          `El Aroon Down (${aroonDown.toFixed(1)}%) está por encima de 70 mientras que el Aroon Up (${aroonUp.toFixed(1)}%) ` +
+          `está por debajo de 30. Esto indica que se han formado nuevos mínimos recientemente, señal de tendencia bajista.`
+        );
         evidence.push('Aroon bajista');
       }
     }
@@ -215,8 +302,14 @@ export class TechnicalIndicatorsService {
     if (indicators.momentum !== null && indicators.momentum !== undefined) {
       if (indicators.momentum > 0) {
         trendScore += 10;
+        detailedReasons.push(
+          `El Momentum es positivo (${indicators.momentum.toFixed(2)}), indicando que el precio actual está por encima del precio de hace 10 períodos, lo que confirma tendencia alcista.`
+        );
       } else {
         trendScore -= 10;
+        detailedReasons.push(
+          `El Momentum es negativo (${indicators.momentum.toFixed(2)}), indicando que el precio actual está por debajo del precio de hace 10 períodos, lo que confirma tendencia bajista.`
+        );
       }
     }
     
@@ -235,25 +328,25 @@ export class TechnicalIndicatorsService {
       trend = 'strong_uptrend';
       direction = 'bullish';
       phase = 'trending';
-      description = `Tendencia alcista fuerte (${evidence.join(', ')})`;
+      description = detailedReasons.join(' ');
       recommendedIndicators = ['ADX', 'Parabolic SAR', 'EMA', 'MACD', 'Ichimoku'];
     } else if (trendScore >= 20) {
       trend = 'uptrend';
       direction = 'bullish';
       phase = 'trending';
-      description = `Tendencia alcista moderada (${evidence.join(', ')})`;
+      description = detailedReasons.join(' ');
       recommendedIndicators = ['SMA', 'MACD', 'ADX', 'Bollinger Bands'];
     } else if (trendScore <= -50) {
       trend = 'strong_downtrend';
       direction = 'bearish';
       phase = 'trending';
-      description = `Tendencia bajista fuerte (${evidence.join(', ')})`;
+      description = detailedReasons.join(' ');
       recommendedIndicators = ['ADX', 'Parabolic SAR', 'EMA', 'MACD', 'Ichimoku'];
     } else if (trendScore <= -20) {
       trend = 'downtrend';
       direction = 'bearish';
       phase = 'trending';
-      description = `Tendencia bajista moderada (${evidence.join(', ')})`;
+      description = detailedReasons.join(' ');
       recommendedIndicators = ['SMA', 'MACD', 'ADX', 'Bollinger Bands'];
     } else {
       trend = 'sideways';
@@ -262,10 +355,13 @@ export class TechnicalIndicatorsService {
       // Determinar si está consolidando o en rango
       if (indicators.bollingerBands && indicators.bollingerBands.bandwidth < 10) {
         phase = 'consolidating';
-        description = `Consolidación - squeeze de Bollinger (${evidence.join(', ')})`;
+        description = `Nos encontramos en fase de consolidación. ` + detailedReasons.join(' ') + 
+          ` Las Bandas de Bollinger muestran un ancho de ${indicators.bollingerBands.bandwidth.toFixed(1)}%, ` +
+          `indicando baja volatilidad y posible breakout inminente.`;
       } else {
         phase = 'ranging';
-        description = `Rango lateral (${evidence.join(', ')})`;
+        description = `Nos encontramos en fase de rango lateral. ` + detailedReasons.join(' ') + 
+          ` En esta situación, son más efectivos los osciladores que detectan zonas de sobrecompra y sobreventa.`;
       }
       
       recommendedIndicators = ['RSI', 'Estocástico', 'CCI', 'Bollinger Bands', 'Fibonacci'];
